@@ -10,6 +10,7 @@ from lib.config import (
     telegram_channel_usernames,
 )
 from gemini_llm import analyze_with_gemini
+from db_operations import db
 
 
 async def download_image(message, client):
@@ -29,15 +30,12 @@ async def message_handler(event):
 
     analysis_result = await analyze_with_gemini(image_path, message.text)
 
-    print(f"Message: {message.text}, image_path: {image_path}")
-
     if analysis_result:
         if (
             analysis_result["is_alpha_call"]
             and analysis_result["token_ticker"]
             and analysis_result["network"]
         ):
-            # Add the channel name, url and date to the result
             channel = await event.get_chat()
             analysis_result["channel_name"] = channel.title
             if channel.username:  # Public channel
@@ -50,9 +48,13 @@ async def message_handler(event):
                 )
             analysis_result["date"] = message.date.isoformat()
 
+            # if analysis_result["token_ticker"] starts with $, remove it
+            if analysis_result["token_ticker"].startswith("$"):
+                analysis_result["token_ticker"] = analysis_result["token_ticker"][1:]
+
             print(f"Alpha call detected: {json.dumps(analysis_result, indent=2)}")
 
-            # Here you could save the result to a database or file
+            await db.save_alpha_call(analysis_result)
         else:
             print(
                 "Message discarded: Not an alpha call or missing required information"
@@ -76,6 +78,8 @@ async def start_telegram_client():
             await client.send_code_request(telegram_phone_number)
             await client.sign_in(telegram_phone_number, input("Enter the code: "))
 
+        await db.connect()
+
         channels = []
         for username in telegram_channel_usernames:
             channel = await client.get_entity(username)
@@ -90,3 +94,4 @@ async def start_telegram_client():
         print(f"An error occurred: {e}")
     finally:
         await client.disconnect()
+        await db.close()
