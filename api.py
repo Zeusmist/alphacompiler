@@ -25,7 +25,7 @@ async def get_trending_tokens(time_window: str = "24h"):
     else:
         window = timedelta(days=3)  # Default to 3 days
 
-    trending_tokens = await db.get_trending_tokens(window)
+    trending_tokens = await db.get_trending_tokens(window, limit=10)
     return {"trending_tokens": trending_tokens}
 
 

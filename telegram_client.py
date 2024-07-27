@@ -51,70 +51,79 @@ async def message_handler(event):
 
     print(f"Inital analysis result: {json.dumps(analysis_result, indent=2)}")
 
-    if analysis_result:
-        if analysis_result["is_alpha_call"] and analysis_result["token_ticker"]:
-            # Remove $ from ticker if present
-            if analysis_result["token_ticker"].startswith("$"):
-                analysis_result["token_ticker"] = analysis_result["token_ticker"][1:]
+    try:
+        if analysis_result:
+            if analysis_result["is_alpha_call"] and analysis_result["token_ticker"]:
+                # Remove $ from ticker if present
+                if analysis_result["token_ticker"].startswith("$"):
+                    analysis_result["token_ticker"] = analysis_result["token_ticker"][
+                        1:
+                    ]
 
-            # Check for missing network
-            if not analysis_result.get("network"):
-                network = await db.get_network_for_ticker(
-                    analysis_result["token_ticker"]
-                )
-                # network might be null
-                if network and network != "null":
-                    print(
-                        f"Network found if: {analysis_result['token_ticker']}: {network}"
+                # Check for missing network
+                if not analysis_result.get("network"):
+                    network = await db.get_network_for_ticker(
+                        analysis_result["token_ticker"]
                     )
-                    analysis_result["network"] = network
+                    # network might be null
+                    if network and network != "null":
+                        print(
+                            f"Network found if: {analysis_result['token_ticker']}: {network}"
+                        )
+                        analysis_result["network"] = network
 
-            # Fetch token info from DexScreener if network or address is missing
-            if not analysis_result.get("network") or not analysis_result.get(
-                "token_address"
-            ):
-                token_info = await fetch_token_info_from_dexscreener(
-                    analysis_result["token_ticker"]
-                )
-                print(
-                    f"Token info from DexScreener: {json.dumps(token_info, indent=2)}"
-                )
-                if token_info:
-                    analysis_result["token_address"] = token_info["token_address"]
-                    analysis_result["token_name"] = token_info["token_name"]
-                    if token_info["token_image"]:
-                        analysis_result["token_image"] = token_info["token_image"]
-                    if not analysis_result.get("network"):
-                        analysis_result["network"] = token_info["network"]
+                # Fetch token info from DexScreener if network or address is missing
+                if not analysis_result.get("network") or not analysis_result.get(
+                    "token_address"
+                ):
+                    token_info = await fetch_token_info_from_dexscreener(
+                        analysis_result["token_ticker"]
+                    )
+                    print(
+                        f"Token info from DexScreener: {json.dumps(token_info, indent=2)}"
+                    )
+                    if token_info:
+                        analysis_result["token_address"] = token_info["token_address"]
+                        analysis_result["token_name"] = token_info["token_name"]
+                        if token_info["token_image"]:
+                            analysis_result["token_image"] = token_info["token_image"]
+                        if not analysis_result.get("network"):
+                            analysis_result["network"] = token_info["network"]
 
-            channel = await event.get_chat()
-            analysis_result["channel_name"] = channel.title
-            if channel.username:  # Public channel
-                analysis_result["message_url"] = (
-                    f"https://t.me/{channel.username}/{message.id}"
-                )
-            else:  # Private channel
-                analysis_result["message_url"] = (
-                    f"https://t.me/c/{channel.id}/{message.id}"
-                )
-            analysis_result["date"] = message.date.isoformat()
+                channel = await event.get_chat()
+                analysis_result["channel_name"] = channel.title
+                if channel.username:  # Public channel
+                    analysis_result["message_url"] = (
+                        f"https://t.me/{channel.username}/{message.id}"
+                    )
+                else:  # Private channel
+                    analysis_result["message_url"] = (
+                        f"https://t.me/c/{channel.id}/{message.id}"
+                    )
+                analysis_result["date"] = message.date.isoformat()
 
-            # Only save the alpha call if we have all required information
-            if analysis_result.get("network") and analysis_result.get("token_address"):
-                print(f"Alpha call detected: {json.dumps(analysis_result, indent=2)}")
-                await db.save_alpha_call(analysis_result)
+                # Only save the alpha call if we have all required information
+                if analysis_result.get("network") and analysis_result.get(
+                    "token_address"
+                ):
+                    print(
+                        f"Alpha call detected: {json.dumps(analysis_result, indent=2)}"
+                    )
+                    await db.save_alpha_call(analysis_result)
+                else:
+                    print("Message discarded: Missing network or token_address")
+                    print(
+                        f"Incomplete analysis result: {json.dumps(analysis_result, indent=2)}"
+                    )
             else:
-                print("Message discarded: Missing network or token_address")
                 print(
-                    f"Incomplete analysis result: {json.dumps(analysis_result, indent=2)}"
+                    "Message discarded: Not an alpha call or missing required information"
                 )
+                print(f"Analysis result: {json.dumps(analysis_result, indent=2)}")
         else:
-            print(
-                "Message discarded: Not an alpha call or missing required information"
-            )
-            print(f"Analysis result: {json.dumps(analysis_result, indent=2)}")
-    else:
-        print("Failed to analyze message")
+            print("Failed to analyze message")
+    except Exception as e:
+        print(f"An error occurred: {e}")
 
     if image_path:
         os.remove(image_path)  # Clean up the downloaded image

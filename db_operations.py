@@ -1,12 +1,21 @@
 import asyncpg
+import aiohttp
 from datetime import datetime, timezone
 from dateutil.parser import parse
 from lib.config import pg_user, pg_password, pg_host, pg_database
+import logging
+import json
+from aioredis import Redis
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 class Database:
     def __init__(self):
         self.pool = None
+        self.redis = None
 
     async def connect(self):
         self.pool = await asyncpg.create_pool(
@@ -18,8 +27,20 @@ class Database:
         async with self.pool.acquire() as conn:
             await conn.execute("SET timezone TO 'UTC';")
 
+        # Initialize Redis connection
+        self.redis = Redis(host="localhost", port=6379, db=0, encoding="utf-8")
+
+        # Test Redis connection
+        await self.redis.set("test_key", "test_value")
+        value = await self.redis.get("test_key")
+        print(f"Retrieved value from Redis: {value}")
+
+        logger.info("Database connected and redis initialized")
+
     async def close(self):
         await self.pool.close()
+        await self.redis.close()
+        logger.info("Database connection closed")
 
     async def save_alpha_call(self, alpha_call):
         async with self.pool.acquire() as conn:
@@ -50,47 +71,94 @@ class Database:
                 alpha_call.get("long_term", False),
             )
 
-    async def get_trending_tokens(self, time_window):
-        async with self.pool.acquire() as conn:
-            now = datetime.now(timezone.utc)
-            naive_utc_date = now.replace(tzinfo=None)
-            # use a try catch to get the trending tokens
+    async def get_trending_tokens(self, time_window, limit: int = 10):
+        cache_key = f"trending_tokens:{time_window}:{limit}"
+
+        if self.redis:
             try:
-                trending_tokens = await conn.fetch(
-                    """
-                    WITH ranked_tokens AS (
-                        SELECT 
-                            token_ticker, 
-                            network, 
-                            token_address,
-                            COUNT(*) as mention_count,
-                            MAX(date) as latest_date
-                        FROM alpha_calls
-                        WHERE date > $1
-                        GROUP BY token_ticker, network, token_address
-                    )
-                    SELECT 
-                        rt.token_ticker, 
-                        rt.network, 
-                        rt.token_address,
-                        ac.token_name,
-                        ac.token_image,
-                        rt.mention_count,
-                        rt.latest_date
-                    FROM ranked_tokens rt
-                    JOIN alpha_calls ac ON 
-                        rt.token_ticker = ac.token_ticker AND
-                        rt.network = ac.network AND
-                        rt.token_address = ac.token_address AND
-                        rt.latest_date = ac.date
-                    ORDER BY rt.mention_count DESC, rt.latest_date DESC
-                    LIMIT 10
-                """,
-                    naive_utc_date - time_window,
-                )
-                return trending_tokens
+                cached_data = await self.redis.get(cache_key)
+                if cached_data:
+                    logger.info("Returning cached result")
+                    return json.loads(cached_data)
             except Exception as e:
-                print(f"An error occurred: {e}")
+                logger.error(f"Cache error: {e}")
+
+        async with self.pool.acquire() as conn:
+            try:
+                now = datetime.now(timezone.utc)
+                naive_utc_date = now.replace(tzinfo=None)
+                print(f"Naive UTC date: {naive_utc_date}")
+                query = """
+                    SELECT 
+                        token_ticker, 
+                        network, 
+                        token_address,
+                        MAX(token_name) as token_name,
+                        MAX(token_image) as token_image,
+                        COUNT(*) as mention_count,
+                        MAX(date) as latest_date
+                    FROM alpha_calls
+                    WHERE date > $1
+                    GROUP BY token_ticker, network, token_address
+                    ORDER BY mention_count DESC, latest_date DESC
+                    LIMIT $2
+                """
+                rows = await conn.fetch(query, naive_utc_date - time_window, limit)
+
+                trending_tokens = []
+                async with aiohttp.ClientSession() as session:
+                    for row in rows:
+                        token_data = dict(row)
+                        # trending_tokens.append(dict(row))
+
+                        # Fetch additional data from DexScreener
+                        token_address = token_data["token_address"]
+                        network = token_data["network"]
+                        dex_url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
+
+                        try:
+                            async with session.get(dex_url) as response:
+                                if response.status == 200:
+                                    dex_data = await response.json()
+                                    if dex_data["pairs"] and len(dex_data["pairs"]) > 0:
+                                        pair = dex_data["pairs"][0]
+
+                                        token_data.update(
+                                            {
+                                                "pair": f"{pair['baseToken']['symbol']}/{pair['quoteToken']['symbol']}",
+                                                "price": (
+                                                    pair["priceUsd"]
+                                                    if pair.get("priceUsd")
+                                                    else 0
+                                                ),
+                                                "24h_change": pair["priceChange"][
+                                                    "h24"
+                                                ],
+                                                "24h_volume": pair["volume"]["h24"],
+                                            }
+                                        )
+                                    else:
+                                        logger.warning(
+                                            f"Failed to fetch data from DexScreener for {token_address}"
+                                        )
+
+                        except Exception as e:
+                            logger.error(f"Error fetching DexScreener data: {e}")
+
+                        trending_tokens.append(token_data)
+
+                if self.redis:
+                    try:
+                        await self.redis.set(
+                            cache_key, json.dumps(trending_tokens), expire=60 * 5
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to set redis: {e}")
+
+                return trending_tokens
+
+            except Exception as e:
+                logger.error(f"An error occurred: {e}")
                 return None
 
     async def get_network_for_ticker(self, ticker):
