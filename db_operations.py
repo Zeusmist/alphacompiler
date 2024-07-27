@@ -34,19 +34,20 @@ class Database:
             await conn.execute(
                 """
                 INSERT INTO alpha_calls (
-                    token_ticker, token_address, network, confidence, 
+                    token_ticker, token_address, token_name, token_image, network, 
                     additional_info, channel_name, message_url, date, long_term
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             """,
                 alpha_call["token_ticker"],
                 alpha_call["token_address"],
+                alpha_call.get("token_name"),
+                alpha_call.get("token_image"),
                 alpha_call["network"],
-                alpha_call["confidence"],
-                alpha_call["additional_info"],
+                alpha_call.get("additional_info"),
                 alpha_call["channel_name"],
                 alpha_call["message_url"],
                 naive_utc_date,
-                alpha_call["long_term"],
+                alpha_call.get("long_term", False),
             )
 
     async def get_trending_tokens(self, time_window):
@@ -57,12 +58,32 @@ class Database:
             try:
                 trending_tokens = await conn.fetch(
                     """
-                    SELECT token_ticker, network, COUNT(*) as mention_count, 
-                          AVG(confidence) as avg_confidence
-                    FROM alpha_calls
-                    WHERE date > $1
-                    GROUP BY token_ticker, network
-                    ORDER BY mention_count DESC, avg_confidence DESC
+                    WITH ranked_tokens AS (
+                        SELECT 
+                            token_ticker, 
+                            network, 
+                            token_address,
+                            COUNT(*) as mention_count,
+                            MAX(date) as latest_date
+                        FROM alpha_calls
+                        WHERE date > $1
+                        GROUP BY token_ticker, network, token_address
+                    )
+                    SELECT 
+                        rt.token_ticker, 
+                        rt.network, 
+                        rt.token_address,
+                        ac.token_name,
+                        ac.token_image,
+                        rt.mention_count,
+                        rt.latest_date
+                    FROM ranked_tokens rt
+                    JOIN alpha_calls ac ON 
+                        rt.token_ticker = ac.token_ticker AND
+                        rt.network = ac.network AND
+                        rt.token_address = ac.token_address AND
+                        rt.latest_date = ac.date
+                    ORDER BY rt.mention_count DESC, rt.latest_date DESC
                     LIMIT 10
                 """,
                     naive_utc_date - time_window,
@@ -70,6 +91,27 @@ class Database:
                 return trending_tokens
             except Exception as e:
                 print(f"An error occurred: {e}")
+                return None
+
+    async def get_network_for_ticker(self, ticker):
+        print(f"Fetching network for ticker: {ticker}")
+        async with self.pool.acquire() as conn:
+            try:
+                result = await conn.fetchrow(
+                    """
+                    SELECT network, COUNT(*) as count
+                    FROM alpha_calls
+                    WHERE token_ticker = $1
+                    GROUP BY network
+                    ORDER BY count DESC
+                    LIMIT 1
+                    """,
+                    ticker,
+                )
+                print(f"Network found: {result['network'] if result else None}")
+                return result["network"] if result else None
+            except Exception as e:
+                print(f"An error occurred while fetching network for ticker: {e}")
                 return None
 
 

@@ -1,8 +1,8 @@
 import os
 import json
+import aiohttp
 from telethon import TelegramClient, events
 from telethon.tl.types import InputPeerChannel
-from telethon.tl.functions.channels import GetFullChannelRequest
 from lib.config import (
     telegram_api_id,
     telegram_api_hash,
@@ -24,18 +24,69 @@ async def download_image(message, client):
         return path
 
 
+async def fetch_token_info_from_dexscreener(ticker):
+    print(f"Fetching token info for {ticker} from DexScreener")
+    async with aiohttp.ClientSession() as session:
+        url = f"https://api.dexscreener.io/latest/dex/search?q={ticker}"
+        async with session.get(url) as response:
+            if response.status == 200:
+                data = await response.json()
+                if data["pairs"] and len(data["pairs"]) > 0:
+                    pair = data["pairs"][0]
+                    print(f"Token info found: {json.dumps(pair, indent=2)}")
+                    return {
+                        "token_address": pair["baseToken"]["address"],
+                        "token_name": pair["baseToken"]["name"],
+                        "token_image": pair.get("info", {}).get("imageUrl"),
+                        "network": pair["chainId"],
+                    }
+    return None
+
+
 async def message_handler(event):
     message = event.message
     image_path = await download_image(message, event.client) if message.media else None
 
     analysis_result = await analyze_with_gemini(image_path, message.text)
 
+    print(f"Inital analysis result: {json.dumps(analysis_result, indent=2)}")
+
     if analysis_result:
-        if (
-            analysis_result["is_alpha_call"]
-            and analysis_result["token_ticker"]
-            and analysis_result["network"]
-        ):
+        if analysis_result["is_alpha_call"] and analysis_result["token_ticker"]:
+            # Remove $ from ticker if present
+            if analysis_result["token_ticker"].startswith("$"):
+                analysis_result["token_ticker"] = analysis_result["token_ticker"][1:]
+
+            # Check for missing network
+            if not analysis_result.get("network"):
+                network = await db.get_network_for_ticker(
+                    analysis_result["token_ticker"]
+                )
+                # network might be null
+                if network and network != "null":
+                    print(
+                        f"Network found if: {analysis_result['token_ticker']}: {network}"
+                    )
+                    analysis_result["network"] = network
+
+            # Fetch token info from DexScreener if network or address is missing
+            if not analysis_result.get("network") or not analysis_result.get(
+                "token_address"
+            ):
+                token_info = await fetch_token_info_from_dexscreener(
+                    analysis_result["token_ticker"]
+                )
+                print(
+                    f"Token info from DexScreener: {json.dumps(token_info, indent=2)}"
+                )
+                if token_info:
+                    analysis_result["token_address"] = token_info["token_address"]
+                    analysis_result["token_name"] = token_info["token_name"]
+                    if token_info["token_image"]:
+                        analysis_result["token_image"] = token_info["token_image"]
+                    if not analysis_result.get("network"):
+                        analysis_result["network"] = token_info["network"]
+
             channel = await event.get_chat()
             analysis_result["channel_name"] = channel.title
             if channel.username:  # Public channel
@@ -48,13 +99,15 @@ async def message_handler(event):
                 )
             analysis_result["date"] = message.date.isoformat()
 
-            # if analysis_result["token_ticker"] starts with $, remove it
-            if analysis_result["token_ticker"].startswith("$"):
-                analysis_result["token_ticker"] = analysis_result["token_ticker"][1:]
-
-            print(f"Alpha call detected: {json.dumps(analysis_result, indent=2)}")
-
-            await db.save_alpha_call(analysis_result)
+            # Only save the alpha call if we have all required information
+            if analysis_result.get("network") and analysis_result.get("token_address"):
+                print(f"Alpha call detected: {json.dumps(analysis_result, indent=2)}")
+                await db.save_alpha_call(analysis_result)
+            else:
+                print("Message discarded: Missing network or token_address")
+                print(
+                    f"Incomplete analysis result: {json.dumps(analysis_result, indent=2)}"
+                )
         else:
             print(
                 "Message discarded: Not an alpha call or missing required information"

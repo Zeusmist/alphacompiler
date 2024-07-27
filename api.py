@@ -23,7 +23,7 @@ async def get_trending_tokens(time_window: str = "24h"):
     elif time_window == "7d":
         window = timedelta(days=7)
     else:
-        window = timedelta(hours=24)  # Default to 24 hours
+        window = timedelta(days=3)  # Default to 3 days
 
     trending_tokens = await db.get_trending_tokens(window)
     return {"trending_tokens": trending_tokens}
@@ -32,4 +32,4 @@ async def get_trending_tokens(time_window: str = "24h"):
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run()
