@@ -1,3 +1,4 @@
+from typing import Optional
 import asyncpg
 import aiohttp
 from datetime import datetime, timezone
@@ -190,6 +191,47 @@ class Database:
             except Exception as e:
                 print(f"An error occurred while fetching network for ticker: {e}")
                 return None
+
+    async def get_user_by_email(self, email: str):
+        async with self.pool.acquire() as conn:
+            return await conn.fetchrow("SELECT * FROM users WHERE email = $1", email)
+
+    async def get_user_by_wallet(self, wallet_address: str):
+        async with self.pool.acquire() as conn:
+            return await conn.fetchrow(
+                "SELECT * FROM users WHERE wallet_address = $1", wallet_address
+            )
+
+    async def create_user(
+        self,
+        email: Optional[str],
+        hashed_password: Optional[str],
+        wallet_address: Optional[str],
+    ):
+        async with self.pool.acquire() as conn:
+            return await conn.fetchrow(
+                """
+                INSERT INTO users (email, hashed_password, wallet_address)
+                VALUES ($1, $2, $3)
+                RETURNING id, email, wallet_address
+                """,
+                email,
+                hashed_password,
+                wallet_address,
+            )
+
+    async def update_user_wallet(self, email: str, wallet_address: str):
+        async with self.pool.acquire() as conn:
+            return await conn.fetchrow(
+                """
+                UPDATE users
+                SET wallet_address = $2
+                WHERE email = $1
+                RETURNING id, email, wallet_address
+                """,
+                email,
+                wallet_address,
+            )
 
 
 db = Database()

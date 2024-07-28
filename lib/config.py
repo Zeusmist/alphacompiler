@@ -14,3 +14,8 @@ pg_user = os.getenv("POSTGRES_USER")
 pg_password = os.getenv("POSTGRES_PASSWORD")
 pg_database = os.getenv("POSTGRES_DB")
 pg_host = os.getenv("POSTGRES_HOST")
+
+secret_key = os.getenv("SECRET_KEY")
+
+token_algorithm = "HS256"
+access_token_expire_minutes = 60
