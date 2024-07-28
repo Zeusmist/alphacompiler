@@ -2,13 +2,15 @@ import sys
 import time
 import logging
 from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
+from watchdog.events import FileSystemEventHandler, FileModifiedEvent
 import subprocess
+import os
 
 
 class RestartHandler(FileSystemEventHandler):
     def __init__(self):
         self.process = None
+        self.last_restart_time = 0
         self.start_process()
 
     def start_process(self):
@@ -16,9 +18,18 @@ class RestartHandler(FileSystemEventHandler):
             self.process.terminate()
             self.process.wait()
         self.process = subprocess.Popen([sys.executable, "main.py"])
+        self.last_restart_time = time.time()
 
-    def on_any_event(self, event):
-        if event.src_path.endswith(".py"):
+    def on_modified(self, event):
+        if not isinstance(event, FileModifiedEvent):
+            return
+
+        current_time = time.time()
+        if (
+            event.src_path.endswith(".py")
+            and os.path.basename(event.src_path) != "run_with_restart.py"
+            and (current_time - self.last_restart_time) > 5  # 5-second cooldown
+        ):
             print(f"Change detected in {event.src_path}. Restarting...")
             self.start_process()
 

@@ -12,6 +12,13 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def json_serial(obj):
+    """JSON serializer for objects not serializable by default json code"""
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    raise TypeError(f"Type {type(obj)} not serializable")
+
+
 class Database:
     def __init__(self):
         self.pool = None
@@ -150,7 +157,9 @@ class Database:
                 if self.redis:
                     try:
                         await self.redis.set(
-                            cache_key, json.dumps(trending_tokens), expire=60 * 5
+                            cache_key,
+                            json.dumps(trending_tokens, default=json_serial),
+                            ex=60 * 5,
                         )
                     except Exception as e:
                         logger.error(f"Failed to set redis: {e}")
