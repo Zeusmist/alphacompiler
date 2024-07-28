@@ -2,11 +2,11 @@
 
 1. Setup PostgreSQL database
 
-- [PostgreSQL Setup Guide for Ubuntu WSL](postgresql-ubuntu-wsl-setup.md)
+- [PostgreSQL Setup Guide for Ubuntu WSL](docs/postgresql-ubuntu-wsl-setup.md)
 
 2. Setup Redis
 
-- [Redis Setup Guide for Ubuntu WSL](redis-setup-guide.md)
+- [Redis Setup Guide for Ubuntu WSL](docs/redis-setup-guide.md)
 
 ### Environment Setup
 

@@ -133,4 +133,4 @@ sudo service postgresql start
  psql -U postgres -h localhost -d postgres
 ```
 
-- Run the query found in `alpha_calls_table.sql`
+- Run the query found in [alpha_calls_table.sql](../sql/alpha_calls_table.sql) to create the table.
