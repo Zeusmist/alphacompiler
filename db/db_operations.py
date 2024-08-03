@@ -1,6 +1,5 @@
 from typing import Optional, Any
 import asyncpg
-from datetime import datetime
 from lib.config import (
     pg_user,
     pg_password,
@@ -10,22 +9,11 @@ from lib.config import (
     redis_port,
     redis_db,
 )
-import logging
 from aioredis import Redis
 from abc import ABC, abstractmethod
 from db.user_repo import UserRepository
 from db.token_repo import TokenRepository
-
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-
-def json_serial(obj):
-    """JSON serializer for objects not serializable by default json code"""
-    if isinstance(obj, datetime):
-        return obj.isoformat()
-    raise TypeError(f"Type {type(obj)} not serializable")
+from db.utils import logger
 
 
 class Database:
@@ -65,37 +53,6 @@ class Database:
         if self.redis:
             await self.redis.close()
         logger.info("Database connection closed")
-
-
-class Repository(ABC):
-    def __init__(self, db: Database):
-        self.db = db
-
-    @abstractmethod
-    async def execute(self, query: str, *args) -> Any:
-        pass
-
-    @abstractmethod
-    async def fetch(self, query: str, *args) -> list[Any]:
-        pass
-
-    @abstractmethod
-    async def fetchrow(self, query: str, *args) -> Optional[Any]:
-        pass
-
-
-class PostgresRepository(Repository):
-    async def execute(self, query: str, *args) -> Any:
-        async with self.db.pool.acquire() as conn:
-            return await conn.execute(query, *args)
-
-    async def fetch(self, query: str, *args) -> list[Any]:
-        async with self.db.pool.acquire() as conn:
-            return await conn.fetch(query, *args)
-
-    async def fetchrow(self, query: str, *args) -> Optional[Any]:
-        async with self.db.pool.acquire() as conn:
-            return await conn.fetchrow(query, *args)
 
 
 class DatabaseOperations:

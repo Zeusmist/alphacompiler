@@ -1,5 +1,6 @@
 from typing import Optional, Dict, Any
-from db.db_operations import PostgresRepository, logger
+from db.base_repo import PostgresRepository
+from db.utils import logger
 from asyncpg import UniqueViolationError
 from datetime import datetime
 

@@ -15,17 +15,14 @@ from db.db_operations import db_operations
 
 async def download_image(message, client):
     if message.photo:
-        path = await message.download_media()
-        print(f"Photo downloaded to {path}")
+        path = await message.download_media("downloaded_media")
         return path
     elif message.document and message.document.mime_type.startswith("image"):
-        path = await message.download_media()
-        print(f"Image document downloaded to {path}")
+        path = await message.download_media("downloaded_media")
         return path
 
 
 async def fetch_token_info_from_dexscreener(ticker):
-    print(f"Fetching token info for {ticker} from DexScreener")
     async with aiohttp.ClientSession() as session:
         url = f"https://api.dexscreener.io/latest/dex/search?q={ticker}"
         async with session.get(url) as response:
@@ -33,7 +30,6 @@ async def fetch_token_info_from_dexscreener(ticker):
                 data = await response.json()
                 if data["pairs"] and len(data["pairs"]) > 0:
                     pair = data["pairs"][0]
-                    print(f"Token info found: {json.dumps(pair, indent=2)}")
                     return {
                         "token_address": pair["baseToken"]["address"],
                         "token_name": pair["baseToken"]["name"],
@@ -48,8 +44,6 @@ async def message_handler(event):
     image_path = await download_image(message, event.client) if message.media else None
 
     analysis_result = await analyze_with_gemini(image_path, message.text)
-
-    print(f"Inital analysis result: {json.dumps(analysis_result, indent=2)}")
 
     try:
         if analysis_result:
@@ -119,7 +113,6 @@ async def message_handler(event):
                 print(
                     "Message discarded: Not an alpha call or missing required information"
                 )
-                print(f"Analysis result: {json.dumps(analysis_result, indent=2)}")
         else:
             print("Failed to analyze message")
     except Exception as e:

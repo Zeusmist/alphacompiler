@@ -3,7 +3,8 @@ import aiohttp
 from datetime import datetime, timezone, timedelta
 from dateutil.parser import parse
 import json
-from db.db_operations import PostgresRepository, logger, json_serial
+from db.base_repo import PostgresRepository
+from db.utils import logger, json_serial
 
 
 class TokenRepository(PostgresRepository):
