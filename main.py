@@ -6,7 +6,6 @@ from service_starter import main as start_services
 
 
 async def run_api():
-    # config = uvicorn.Config(app, host="localhost", port=8000, loop="asyncio")
     config = uvicorn.Config(app, host="0.0.0.0", port=8000, loop="asyncio")
     server = uvicorn.Server(config)
     await server.serve()

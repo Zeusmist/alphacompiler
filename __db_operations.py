@@ -50,6 +50,7 @@ class Database:
         await self.redis.close()
         logger.info("Database connection closed")
 
+    # Token / Alpha call operations
     async def save_alpha_call(self, alpha_call):
         async with self.pool.acquire() as conn:
             date = parse(alpha_call["date"])
@@ -192,6 +193,7 @@ class Database:
                 print(f"An error occurred while fetching network for ticker: {e}")
                 return None
 
+    # User operations
     async def get_user_by_email(self, email: str):
         async with self.pool.acquire() as conn:
             return await conn.fetchrow("SELECT * FROM users WHERE email = $1", email)
@@ -200,24 +202,6 @@ class Database:
         async with self.pool.acquire() as conn:
             return await conn.fetchrow(
                 "SELECT * FROM users WHERE wallet_address = $1", wallet_address
-            )
-
-    async def create_user(
-        self,
-        email: Optional[str],
-        hashed_password: Optional[str],
-        wallet_address: Optional[str],
-    ):
-        async with self.pool.acquire() as conn:
-            return await conn.fetchrow(
-                """
-                INSERT INTO users (email, hashed_password, wallet_address)
-                VALUES ($1, $2, $3)
-                RETURNING id, email, wallet_address
-                """,
-                email,
-                hashed_password,
-                wallet_address,
             )
 
     async def update_user_wallet(self, email: str, wallet_address: str):
@@ -231,6 +215,63 @@ class Database:
                 """,
                 email,
                 wallet_address,
+            )
+
+    async def create_user(
+        self,
+        email: Optional[str],
+        hashed_password: Optional[str],
+        wallet_address: Optional[str],
+    ):
+        async with self.pool.acquire() as conn:
+            return await conn.fetchrow(
+                """
+                INSERT INTO users (email, hashed_password, wallet_address, role)
+                VALUES ($1, $2, $3, $4)
+                RETURNING id, email, wallet_address, role
+                """,
+                email,
+                hashed_password,
+                wallet_address,
+                "basic",  # Default role for new users
+            )
+
+    async def get_user_subscription(self, user_id: int):
+        async with self.pool.acquire() as conn:
+            return await conn.fetchrow(
+                """
+                SELECT * FROM subscriptions
+                WHERE user_id = $1 AND end_date > CURRENT_TIMESTAMP
+                ORDER BY end_date DESC
+                LIMIT 1
+                """,
+                user_id,
+            )
+
+    async def create_subscription(self, user_id: int, plan: str, end_date: datetime):
+        async with self.pool.acquire() as conn:
+            return await conn.fetchrow(
+                """
+                INSERT INTO subscriptions (user_id, plan, start_date, end_date)
+                VALUES ($1, $2, CURRENT_TIMESTAMP, $3)
+                RETURNING id, user_id, plan, start_date, end_date
+                """,
+                user_id,
+                plan,
+                end_date,
+            )
+
+    async def update_user_role(self, user_id: int, role: str):
+        async with self.pool.acquire() as conn:
+            return await conn.fetchrow(
+                """
+                UPDATE users
+                SET role = $2
+                WHERE id = $1
+                RETURNING id, email, wallet_address, role
+                """,
+                user_id,
+                role,
             )
 
 

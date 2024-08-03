@@ -10,7 +10,7 @@ from lib.config import (
     telegram_channel_usernames,
 )
 from gemini_llm import analyze_with_gemini
-from db_operations import db
+from db.db_operations import db_operations
 
 
 async def download_image(message, client):
@@ -62,7 +62,7 @@ async def message_handler(event):
 
                 # Check for missing network
                 if not analysis_result.get("network"):
-                    network = await db.get_network_for_ticker(
+                    network = await db_operations.token_repo.get_network_for_ticker(
                         analysis_result["token_ticker"]
                     )
                     # network might be null
@@ -109,7 +109,7 @@ async def message_handler(event):
                     print(
                         f"Alpha call detected: {json.dumps(analysis_result, indent=2)}"
                     )
-                    await db.save_alpha_call(analysis_result)
+                    await db_operations.token_repo.save_alpha_call(analysis_result)
                 else:
                     print("Message discarded: Missing network or token_address")
                     print(
@@ -140,7 +140,7 @@ async def start_telegram_client():
             await client.send_code_request(telegram_phone_number)
             await client.sign_in(telegram_phone_number, input("Enter the code: "))
 
-        await db.connect()
+        await db_operations.connect()
 
         channels = []
         for username in telegram_channel_usernames:
@@ -156,4 +156,4 @@ async def start_telegram_client():
         print(f"An error occurred: {e}")
     finally:
         await client.disconnect()
-        await db.close()
+        await db_operations.close()

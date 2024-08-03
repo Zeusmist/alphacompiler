@@ -2,25 +2,13 @@ from typing import Optional
 from passlib.context import CryptContext
 from jose import jwt
 from datetime import datetime, timedelta
-from pydantic import BaseModel
-from db_operations import db
-from lib.config import secret_key, token_algorithm, access_token_expire_minutes
+from db.db_operations import db_operations
+from lib.config import secret_key, jwt_algorithm
+from models.user_models import User, UserInDB
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-SECRET_KEY = secret_key
-ALGORITHM = token_algorithm
-ACCESS_TOKEN_EXPIRE_MINUTES = access_token_expire_minutes
-
-
-class User(BaseModel):
-    id: int
-    email: Optional[str] = None
-    wallet_address: Optional[str] = None
-
-
-class UserInDB(User):
-    hashed_password: Optional[str] = None
+user_repo = db_operations.user_repo
 
 
 def verify_password(plain_password, hashed_password):
@@ -32,22 +20,19 @@ def get_password_hash(password):
 
 
 async def get_user_by_email(email: str):
-    user = await db.get_user_by_email(email)
+    user = await user_repo.get_user_by_email(email)
     if user:
         return UserInDB(**user)
 
 
 async def get_user_by_wallet(wallet_address: str):
-    user = await db.get_user_by_wallet(wallet_address)
+    user = await user_repo.get_user_by_wallet(wallet_address)
     if user:
         return UserInDB(**user)
 
 
-async def create_user(
-    email: Optional[str], password: Optional[str], wallet_address: Optional[str]
-):
-    hashed_password = get_password_hash(password) if password else None
-    user = await db.create_user(email, hashed_password, wallet_address)
+async def create_user(email: Optional[str], wallet_address: Optional[str]):
+    user = await user_repo.create_user(email, wallet_address)
     return User(**user)
 
 
@@ -58,5 +43,11 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     else:
         expire = datetime.utcnow() + timedelta(minutes=15)
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    encoded_jwt = jwt.encode(to_encode, secret_key, algorithm=jwt_algorithm)
     return encoded_jwt
+
+
+def is_premium_user(user: User):
+    return user.role == "premium" or (
+        user.subscription_end_date and user.subscription_end_date > datetime.utcnow()
+    )

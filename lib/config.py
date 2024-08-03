@@ -15,7 +15,22 @@ pg_password = os.getenv("POSTGRES_PASSWORD")
 pg_database = os.getenv("POSTGRES_DB")
 pg_host = os.getenv("POSTGRES_HOST")
 
-secret_key = os.getenv("SECRET_KEY")
+redis_host = os.getenv("REDIS_HOST")
+redis_port = os.getenv("REDIS_PORT")
+redis_db = os.getenv("REDIS_DB")
 
-token_algorithm = "HS256"
-access_token_expire_minutes = 60
+secret_key = os.getenv("SECRET_KEY")  # Change this to a secure random key
+
+jwt_algorithm = "HS256"
+access_token_expire_minutes = 2880  # 2 days
+
+stripe_api_key = os.getenv("STRIPE_API_KEY")
+stripe_webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
+
+crypto_payment_address = os.getenv("CRYPTO_PAYMENT_ADDRESS")
+
+# fees should be in cents
+subscription_fees = {
+    "monthly": os.getenv("MONTHLY_SUBSCRIPTION_FEE"),
+    "yearly": os.getenv("YEARLY_SUBSCRIPTION_FEE"),
+}
