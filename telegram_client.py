@@ -61,9 +61,6 @@ async def message_handler(event):
                     )
                     # network might be null
                     if network and network != "null":
-                        print(
-                            f"Network found if: {analysis_result['token_ticker']}: {network}"
-                        )
                         analysis_result["network"] = network
 
                 # Fetch token info from DexScreener if network or address is missing
@@ -72,9 +69,6 @@ async def message_handler(event):
                 ):
                     token_info = await fetch_token_info_from_dexscreener(
                         analysis_result["token_ticker"]
-                    )
-                    print(
-                        f"Token info from DexScreener: {json.dumps(token_info, indent=2)}"
                     )
                     if token_info:
                         analysis_result["token_address"] = token_info["token_address"]
@@ -100,15 +94,10 @@ async def message_handler(event):
                 if analysis_result.get("network") and analysis_result.get(
                     "token_address"
                 ):
-                    print(
-                        f"Alpha call detected: {json.dumps(analysis_result, indent=2)}"
-                    )
+                    print("Alpha call detected")
                     await db_operations.token_repo.save_alpha_call(analysis_result)
                 else:
                     print("Message discarded: Missing network or token_address")
-                    print(
-                        f"Incomplete analysis result: {json.dumps(analysis_result, indent=2)}"
-                    )
             else:
                 print(
                     "Message discarded: Not an alpha call or missing required information"
