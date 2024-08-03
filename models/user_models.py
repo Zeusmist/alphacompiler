@@ -14,10 +14,6 @@ class User(BaseModel):
     subscription_end_date: Optional[datetime] = None
 
 
-class UserInDB(User):
-    hashed_password: Optional[str] = None
-
-
 class UserSignup(BaseModel):
     email: Optional[EmailStr] = None
     wallet_address: Optional[str] = None

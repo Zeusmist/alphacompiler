@@ -1,6 +1,7 @@
 from typing import Optional
 from fastapi import FastAPI, Depends, HTTPException, status, Request
-from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordBearer
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from datetime import timedelta, datetime
 from db.db_operations import db_operations
@@ -10,7 +11,11 @@ from user_operations import (
     create_user,
     create_access_token,
 )
-from lib.config import access_token_expire_minutes, stripe_webhook_secret
+from lib.config import (
+    access_token_expire_minutes,
+    stripe_webhook_secret,
+    allowed_origins,
+)
 from helpers.api_helpers import (
     get_user_by_identifier,
     get_current_user,
@@ -23,12 +28,28 @@ import stripe
 
 app = FastAPI()
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 
 
-class Token(BaseModel):
+def get_access_token(identifier: str):
+    return create_access_token(
+        data={"sub": identifier},
+        expires_delta=timedelta(minutes=access_token_expire_minutes),
+    )
+
+
+class TokenUser(BaseModel):
     access_token: str
-    token_type: str
+    user: User
 
 
 class TokenRequest(BaseModel):
@@ -51,7 +72,7 @@ async def shutdown():
     await db_operations.close()
 
 
-@app.post("/token", response_model=Token)
+@app.post("/token", response_model=TokenUser)
 async def login_for_access_token(token_request: TokenRequest):
     user = await get_user_by_identifier(token_request.identifier)
     if not user:
@@ -60,15 +81,14 @@ async def login_for_access_token(token_request: TokenRequest):
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    access_token_expires = timedelta(minutes=access_token_expire_minutes)
-    access_token = create_access_token(
-        data={"sub": user.email or user.wallet_address},
-        expires_delta=access_token_expires,
-    )
-    return {"access_token": access_token, "token_type": "bearer"}
+    access_token = get_access_token(user.email or user.wallet_address)
+    return {
+        "access_token": access_token,
+        "user": user,
+    }
 
 
-@app.post("/signup")
+@app.post("/signup", response_model=TokenUser)
 async def signup(user: UserSignup):
     if user.email:
         existing_user = await get_user_by_email(user.email)
@@ -91,7 +111,13 @@ async def signup(user: UserSignup):
         )
 
     new_user = await create_user(user.email, user.wallet_address)
-    return {"message": "User created successfully", "user_id": new_user.id}
+
+    access_token = get_access_token(user.email or user.wallet_address)
+
+    return {
+        "access_token": access_token,
+        "user": new_user,
+    }
 
 
 @app.post("/connect_wallet")

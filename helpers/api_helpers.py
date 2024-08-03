@@ -6,12 +6,10 @@ from pydantic import BaseModel
 from user_operations import (
     get_user_by_email,
     get_user_by_wallet,
-    verify_password,
     is_premium_user,
 )
 from lib.config import secret_key, jwt_algorithm
-from models.user_models import UserInDB
-from datetime import datetime
+from models.user_models import User
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
@@ -41,13 +39,16 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
 
 
 async def get_user_by_identifier(identifier: str):
+    print(f"get_user_by_identifier: {identifier}")
     user = await get_user_by_email(identifier)
     if user is None:
         user = await get_user_by_wallet(identifier)
+
+    print(f"get_user_by_identifier USER: {user}")
     return user
 
 
-async def get_premium_user(current_user: UserInDB = Depends(get_current_user)):
+async def get_premium_user(current_user: User = Depends(get_current_user)):
     if not is_premium_user(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

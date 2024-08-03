@@ -3,6 +3,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+allowed_origins = os.getenv("ALLOWED_ORIGINS").split(",")
+
 telegram_api_id = os.getenv("TELEGRAM_API_ID")
 telegram_api_hash = os.getenv("TELEGRAM_API_HASH")
 telegram_phone_number = os.getenv("TELEGRAM_PHONE_NUMBER")
