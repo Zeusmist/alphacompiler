@@ -1,5 +1,4 @@
 import os
-import json
 import aiohttp
 from telethon import TelegramClient, events
 from telethon.tl.types import InputPeerChannel
@@ -11,6 +10,11 @@ from lib.config import (
 )
 from gemini_llm import analyze_with_gemini
 from db.db_operations import db_operations
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 async def download_image(message, client):
@@ -105,7 +109,7 @@ async def message_handler(event):
         else:
             print("Failed to analyze message")
     except Exception as e:
-        print(f"An error occurred: {e}")
+        logger.error(f"An error occurred: {e}")
 
     if image_path:
         os.remove(image_path)  # Clean up the downloaded image
@@ -122,8 +126,6 @@ async def start_telegram_client():
             await client.send_code_request(telegram_phone_number)
             await client.sign_in(telegram_phone_number, input("Enter the code: "))
 
-        await db_operations.connect()
-
         channels = []
         for username in telegram_channel_usernames:
             channel = await client.get_entity(username)
@@ -135,7 +137,6 @@ async def start_telegram_client():
         print("Listening for new messages...")
         await client.run_until_disconnected()
     except Exception as e:
-        print(f"An error occurred: {e}")
+        logger.error(f"An error occurred: {e}")
     finally:
         await client.disconnect()
-        await db_operations.close()

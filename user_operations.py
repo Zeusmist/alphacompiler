@@ -20,14 +20,12 @@ def get_password_hash(password):
 
 
 async def get_user_by_email(email: str):
-    print(f"get_user_by_email: {email}")
     user = await user_repo.get_user_by_email(email)
     if user:
         return User(**user)
 
 
 async def get_user_by_wallet(wallet_address: str):
-    print(f"get_user_by_wallet: {wallet_address}")
     user = await user_repo.get_user_by_wallet(wallet_address)
     if user:
         return User(**user)

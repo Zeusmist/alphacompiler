@@ -3,6 +3,7 @@ from telegram_client import start_telegram_client
 from api import app
 import uvicorn
 from service_starter import main as start_services
+from db.db_operations import db_operations
 
 
 async def run_api():
@@ -12,7 +13,7 @@ async def run_api():
 
 
 async def main():
-    await asyncio.gather(start_telegram_client(), run_api())
+    await asyncio.gather(run_api(), start_telegram_client())
 
 
 if __name__ == "__main__":

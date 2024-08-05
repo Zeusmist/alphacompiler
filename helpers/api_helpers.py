@@ -39,12 +39,9 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
 
 
 async def get_user_by_identifier(identifier: str):
-    print(f"get_user_by_identifier: {identifier}")
     user = await get_user_by_email(identifier)
     if user is None:
         user = await get_user_by_wallet(identifier)
-
-    print(f"get_user_by_identifier USER: {user}")
     return user
 
 

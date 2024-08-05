@@ -7,7 +7,6 @@ from datetime import datetime
 
 class UserRepository(PostgresRepository):
     async def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
-        print(f"DB get_user_by_email: {email}")
         try:
             return await self.fetchrow("SELECT * FROM users WHERE email = $1", email)
         except Exception as e:
@@ -15,7 +14,6 @@ class UserRepository(PostgresRepository):
             return None
 
     async def get_user_by_wallet(self, wallet_address: str) -> Optional[Dict[str, Any]]:
-        print(f"DB get_user_by_wallet: {wallet_address}")
         try:
             return await self.fetchrow(
                 "SELECT * FROM users WHERE wallet_address = $1", wallet_address

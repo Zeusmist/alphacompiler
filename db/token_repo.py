@@ -1,10 +1,26 @@
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 import aiohttp
 from datetime import datetime, timezone, timedelta
 from dateutil.parser import parse
 import json
 from db.base_repo import PostgresRepository
 from db.utils import logger, json_serial
+from pydantic import BaseModel
+import asyncio
+
+
+class TrendingToken(BaseModel):
+    token_ticker: str
+    network: str
+    token_address: str
+    token_name: Optional[str]
+    token_image: Optional[str]
+    mention_count: int
+    latest_date: datetime
+    pair: Optional[str]
+    price: Optional[float]
+    h24_change: Optional[float]
+    h24_volume: Optional[float]
 
 
 class TokenRepository(PostgresRepository):
@@ -37,16 +53,22 @@ class TokenRepository(PostgresRepository):
         )
 
     async def get_trending_tokens(
-        self, time_window: timedelta, limit: int = 10
-    ) -> List[Dict[str, Any]]:
-        cache_key = f"trending_tokens:{time_window}:{limit}"
+        self,
+        time_window: timedelta,
+        limit: int = 10,
+        sort_by: Literal[
+            "mention_count", "latest_date", "price", "h24_change", "h24_volume"
+        ] = "mention_count",
+        sort_order: Literal["asc", "desc"] = "desc",
+    ) -> List[TrendingToken]:
+        cache_key = f"trending_tokens:{time_window}:{limit}:{sort_by}:{sort_order}"
 
         if self.db.redis:
             try:
                 cached_data = await self.db.redis.get(cache_key)
                 if cached_data:
                     logger.info("Returning cached result")
-                    return json.loads(cached_data)
+                    return [TrendingToken(**token) for token in json.loads(cached_data)]
             except Exception as e:
                 logger.error(f"Cache error: {e}")
 
@@ -65,48 +87,40 @@ class TokenRepository(PostgresRepository):
                 FROM alpha_calls
                 WHERE date > $1
                 GROUP BY token_ticker, network, token_address
-                ORDER BY mention_count DESC, latest_date DESC
+                ORDER BY {sort_field} {sort_order}
                 LIMIT $2
             """
+
+            # These fields are already in the table
+            if sort_by in ["mention_count", "latest_date"]:
+                sort_field = sort_by
+            else:
+                sort_field = "mention_count"
+
+            query = query.format(sort_field=sort_field, sort_order=sort_order.upper())
             rows = await self.fetch(query, naive_utc_date - time_window, limit)
 
             trending_tokens = []
             async with aiohttp.ClientSession() as session:
-                for row in rows:
-                    token_data = dict(row)
-                    token_address = token_data["token_address"]
-                    dex_url = (
-                        f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
+                tasks = [self.fetch_token_data(session, dict(row)) for row in rows]
+                trending_tokens = await asyncio.gather(*tasks)
+
+                # Sort the tokens if the sort field is from the external data source
+                if sort_by in ["price", "h24_change", "h24_volume"]:
+                    trending_tokens.sort(
+                        key=lambda x: getattr(x, sort_by)
+                        or (float("-inf") if sort_order == "desc" else float("inf")),
+                        reverse=(sort_order == "desc"),
                     )
-
-                    try:
-                        async with session.get(dex_url) as response:
-                            if response.status == 200:
-                                dex_data = await response.json()
-                                if dex_data["pairs"] and len(dex_data["pairs"]) > 0:
-                                    pair = dex_data["pairs"][0]
-                                    token_data.update(
-                                        {
-                                            "pair": f"{pair['baseToken']['symbol']}/{pair['quoteToken']['symbol']}",
-                                            "price": pair.get("priceUsd", 0),
-                                            "24h_change": pair["priceChange"]["h24"],
-                                            "24h_volume": pair["volume"]["h24"],
-                                        }
-                                    )
-                                else:
-                                    logger.warning(
-                                        f"Failed to fetch data from DexScreener for {token_address}"
-                                    )
-                    except Exception as e:
-                        logger.error(f"Error fetching DexScreener data: {e}")
-
-                    trending_tokens.append(token_data)
 
             if self.db.redis:
                 try:
                     await self.db.redis.set(
                         cache_key,
-                        json.dumps(trending_tokens, default=json_serial),
+                        json.dumps(
+                            [token.dict() for token in trending_tokens],
+                            default=json_serial,
+                        ),
                         ex=60 * 5,
                     )
                 except Exception as e:
@@ -117,6 +131,35 @@ class TokenRepository(PostgresRepository):
         except Exception as e:
             logger.error(f"An error occurred: {e}")
             return []
+
+    async def fetch_token_data(
+        self, session: aiohttp.ClientSession, token_data: dict
+    ) -> TrendingToken:
+        token_address = token_data["token_address"]
+        dex_url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
+
+        try:
+            async with session.get(dex_url) as response:
+                if response.status == 200:
+                    dex_data = await response.json()
+                    if dex_data["pairs"] and len(dex_data["pairs"]) > 0:
+                        pair = dex_data["pairs"][0]
+                        token_data.update(
+                            {
+                                "pair": f"{pair['baseToken']['symbol']}/{pair['quoteToken']['symbol']}",
+                                "price": pair.get("priceUsd", 0),
+                                "h24_change": pair["priceChange"]["h24"],
+                                "h24_volume": pair["volume"]["h24"],
+                            }
+                        )
+                    else:
+                        logger.warning(
+                            f"Failed to fetch data from DexScreener for {token_address}"
+                        )
+        except Exception as e:
+            logger.error(f"Error fetching DexScreener data: {e}")
+
+        return TrendingToken(**token_data)
 
     async def get_network_for_ticker(self, ticker: str) -> Optional[str]:
         try:

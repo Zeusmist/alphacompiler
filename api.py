@@ -120,6 +120,15 @@ async def signup(user: UserSignup):
     }
 
 
+@app.get("/login", response_model=TokenUser)
+async def connect_wallet(current_user: User = Depends(get_current_user)):
+    access_token = get_access_token(current_user.email or current_user.wallet_address)
+    return {
+        "access_token": access_token,
+        "user": current_user,
+    }
+
+
 @app.post("/connect_wallet")
 async def connect_wallet(
     wallet_address: str, current_user: User = Depends(get_current_user)
@@ -155,20 +164,42 @@ async def get_trending_tokens(
     time_window: str = "24h",
     current_user: Optional[User] = Depends(get_current_user),
     limit: int = 10,
+    sort_by: str = "mention_count",
+    sort_order: str = "desc",
 ):
     limit = limit if current_user and current_user.role == "premium" else 3
-    # Convert time_window to timedelta
-    if time_window == "24h":
-        window = timedelta(hours=24)
-    elif time_window == "7d":
-        window = timedelta(days=7)
-    else:
-        window = timedelta(days=3)  # Default to 3 days
 
-    trending_tokens = await db_operations.token_repo.get_trending_tokens(
-        window, limit=limit
+    # if time window ends with h, use hours, if time window ends with d, use days
+    if time_window[-1] == "h":
+        window = timedelta(hours=int(time_window[:-1]))
+    elif time_window[-1] == "d":
+        window = timedelta(days=int(time_window[:-1]))
+    else:
+        window = timedelta(days=3)
+
+    window = (
+        window if current_user and current_user.role == "premium" else timedelta(days=7)
     )
-    return {"trending_tokens": trending_tokens}
+
+    # # Convert time_window to timedelta
+    # if time_window == "24h":
+    #     window = timedelta(hours=24)
+    # elif time_window == "7d":
+    #     window = timedelta(days=7)
+    # else:
+    #     window = timedelta(days=3)  # Default to 3 days
+
+    try:
+        trending_tokens = await db_operations.token_repo.get_trending_tokens(
+            window,
+            limit=limit,
+            sort_by=sort_by,
+            sort_order=sort_order,
+        )
+
+        return {"trending_tokens": trending_tokens}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/create-subscription")
