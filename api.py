@@ -22,7 +22,11 @@ from helpers.api_helpers import (
     get_premium_user,
 )
 from models.user_models import User, UserSignup
-from payments import create_stripe_customer, create_stripe_subscription
+from payments import (
+    create_stripe_customer,
+    create_stripe_subscription,
+    create_checkout_session,
+)
 import stripe
 
 
@@ -57,9 +61,7 @@ class TokenRequest(BaseModel):
 
 
 class SubscriptionRequest(BaseModel):
-    plan: str
-    payment_method: str
-    payment_details: dict
+    price_id: str
 
 
 @app.on_event("startup")
@@ -204,30 +206,57 @@ async def get_trending_tokens(
 
 @app.post("/create-subscription")
 async def create_subscription(
-    price_id,
+    request: SubscriptionRequest,
     current_user: User = Depends(get_current_user),
 ):
+    print(
+        f"Creating subscription for user: {request.price_id} - {current_user.email or current_user.wallet_address}"
+    )
     try:
-        customer_id = await create_stripe_customer(current_user.email)
+        if current_user.stripe_customer_id:
+            customer_id = current_user.stripe_customer_id
+        else:
+            customer_id = await create_stripe_customer(
+                current_user.email or current_user.wallet_address
+            )
+            if not customer_id:
+                raise HTTPException(status_code=400, detail="Failed to create customer")
 
-        subscription = await create_stripe_subscription(
-            customer_id=customer_id, price_id=price_id
-        )
+        if current_user.stripe_subscription_id:
+            # create a payment link
+            payment_link = await create_checkout_session(request.price_id, customer_id)
 
-        await db_operations.user_repo.update_user_role(
-            current_user.id,
-            "premium",
-            stripe_customer_id=customer_id,
-            stripe_subscription_id=subscription.id,
-            subscription_end_date=datetime.fromtimestamp(
-                subscription.current_period_end
-            ),
-        )
+            if not payment_link:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Failed to create payment link. Please try again.",
+                )
 
-        return {
-            "subscription_id": subscription.id,
-            "client_secret": subscription.latest_invoice.payment_intent.client_secret,
-        }
+            return {"payment_link": payment_link}
+        else:
+            subscription = await create_stripe_subscription(
+                customer_id=customer_id,
+                price_id=request.price_id,
+            )
+
+            if not subscription:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Failed to create subscription. Please try again.",
+                )
+
+            await db_operations.user_repo.update_user_role(
+                current_user.id,
+                "premium",
+                stripe_customer_id=customer_id,
+                stripe_subscription_id=subscription.id,
+                subscription_end_date=datetime.fromtimestamp(
+                    subscription.current_period_end
+                ),
+            )
+
+            return {"subscription_id": subscription.id, "trial_period_days": 3}
+
     except stripe.error.StripeError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

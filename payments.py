@@ -2,8 +2,9 @@ import stripe
 from web3 import Web3
 from eth_account.messages import encode_defunct
 from lib.config import stripe_api_key, crypto_payment_address, subscription_fees
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from decimal import Decimal
+from lib.config import frontend_url
 
 stripe.api_key = stripe_api_key
 
@@ -29,10 +30,25 @@ ERC20_TRANSFER_ABI = {
 
 async def create_stripe_customer(email: str) -> str:
     try:
-        customer = stripe.Customer.create(email=email)
+        customer = stripe.Customer.create(name=email)
         return customer.id
     except stripe.error.StripeError as e:
         print(f"Stripe error creating customer: {str(e)}")
+        return None
+
+
+async def create_checkout_session(price_id: str, customer_id: str) -> Optional[str]:
+    try:
+        checkout_session = stripe.checkout.Session.create(
+            customer=customer_id,
+            line_items=[{"price": price_id, "quantity": 1}],
+            mode="subscription",
+            success_url=f"{frontend_url}/dashboard?success=true",
+            cancel_url=f"{frontend_url}/dashboard?canceled=true",
+        )
+        return checkout_session.url
+    except stripe.error.StripeError as e:
+        print(f"Stripe error creating checkout session: {str(e)}")
         return None
 
 
