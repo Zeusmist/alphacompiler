@@ -116,6 +116,30 @@ class UserRepository(PostgresRepository):
             logger.error(f"Error updating user role and subscription info: {e}")
             return None
 
+    async def crypto_update_user_role(
+        self,
+        user_id: int,
+        role: str,
+        crypto_customer_id: Optional[str] = None,
+        subscription_end_date: Optional[datetime] = None,
+    ) -> Optional[Dict[str, Any]]:
+        try:
+            return await self.fetchrow(
+                """
+                UPDATE users
+                SET role = $2, crypto_customer_id = $3, subscription_end_date = $4
+                WHERE id = $1
+                RETURNING *
+                """,
+                user_id,
+                role,
+                crypto_customer_id,
+                subscription_end_date,
+            )
+        except Exception as e:
+            logger.error(f"Error updating crypto user role and subscription info: {e}")
+            return None
+
     async def update_subscription_end_date(
         self, subscription_id: str, subscription_end_date: datetime
     ) -> Optional[Dict[str, Any]]:

@@ -12,6 +12,7 @@ class User(BaseModel):
     stripe_customer_id: Optional[str] = None
     stripe_subscription_id: Optional[str] = None
     subscription_end_date: Optional[datetime] = None
+    crypto_customer_id: Optional[str] = None
 
 
 class UserSignup(BaseModel):

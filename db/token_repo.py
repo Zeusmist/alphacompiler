@@ -61,6 +61,9 @@ class TokenRepository(PostgresRepository):
         ] = "mention_count",
         sort_order: Literal["asc", "desc"] = "desc",
     ) -> List[TrendingToken]:
+        print(
+            f"Fetching trending tokens with {time_window=}, {limit=}, {sort_by=}, {sort_order=}"
+        )
         cache_key = f"trending_tokens:{time_window}:{limit}:{sort_by}:{sort_order}"
 
         if self.db.redis:

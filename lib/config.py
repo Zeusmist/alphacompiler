@@ -34,7 +34,7 @@ stripe_webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
 crypto_payment_address = os.getenv("CRYPTO_PAYMENT_ADDRESS")
 
 # fees should be in cents
-subscription_fees = {
-    "monthly": os.getenv("MONTHLY_SUBSCRIPTION_FEE"),
-    "yearly": os.getenv("YEARLY_SUBSCRIPTION_FEE"),
-}
+monthly_subscription_fee = os.getenv("MONTHLY_SUBSCRIPTION_FEE")
+yearly_subscription_fee = os.getenv("YEARLY_SUBSCRIPTION_FEE")
+
+ethereum_node_url = os.getenv("ETHEREUM_NODE_URL")

@@ -5,5 +5,6 @@ CREATE TABLE users (
     role VARCHAR(20) DEFAULT 'basic',
     stripe_customer_id VARCHAR(255),
     stripe_subscription_id VARCHAR(255),
-    subscription_end_date TIMESTAMP
+    subscription_end_date TIMESTAMP,
+    crypto_customer_id VARCHAR(255),
 );

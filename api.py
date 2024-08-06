@@ -15,6 +15,9 @@ from lib.config import (
     access_token_expire_minutes,
     stripe_webhook_secret,
     allowed_origins,
+    monthly_subscription_fee,
+    yearly_subscription_fee,
+    crypto_payment_address,
 )
 from helpers.api_helpers import (
     get_user_by_identifier,
@@ -26,6 +29,7 @@ from payments import (
     create_stripe_customer,
     create_stripe_subscription,
     create_checkout_session,
+    process_crypto_subscription,
 )
 import stripe
 
@@ -64,6 +68,22 @@ class SubscriptionRequest(BaseModel):
     price_id: str
 
 
+class UpdateUser(BaseModel):
+    email: Optional[str] = None
+    wallet_address: Optional[str] = None
+
+
+class CryptoSubscriptionRequest(BaseModel):
+    plan: str
+
+
+class VerifyCryptoPaymentRequest(BaseModel):
+    tx_hash: str
+    token: str
+    plan: str
+    sender_address: str
+
+
 @app.on_event("startup")
 async def startup():
     await db_operations.connect()
@@ -80,7 +100,7 @@ async def login_for_access_token(token_request: TokenRequest):
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
+            detail="User not found. Please sign up",
             headers={"WWW-Authenticate": "Bearer"},
         )
     access_token = get_access_token(user.email or user.wallet_address)
@@ -133,32 +153,32 @@ async def connect_wallet(current_user: User = Depends(get_current_user)):
 
 @app.post("/connect_wallet")
 async def connect_wallet(
-    wallet_address: str, current_user: User = Depends(get_current_user)
+    request: UpdateUser, current_user: User = Depends(get_current_user)
 ):
-    existing_wallet = await get_user_by_wallet(wallet_address)
+    existing_wallet = await get_user_by_wallet(request.wallet_address)
     if existing_wallet:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Wallet address already registered",
         )
-    updated_user = await db_operations.user_repo.update_user_wallet(
-        current_user.email, wallet_address
+    await db_operations.user_repo.update_user_wallet(
+        current_user.id, request.wallet_address
     )
-    return {"message": "Wallet connected successfully", "user": updated_user}
+    return {"wallet_address": request.wallet_address}
 
 
 @app.post("/connect_email")
-async def connect_email(email: str, current_user: User = Depends(get_current_user)):
-    existing_user = await get_user_by_email(email)
+async def connect_email(
+    request: UpdateUser, current_user: User = Depends(get_current_user)
+):
+    existing_user = await get_user_by_email(request.email)
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered",
         )
-    updated_user = await db_operations.user_repo.update_user_email(
-        current_user.email, email
-    )
-    return {"message": "Email connected successfully", "user": updated_user}
+    await db_operations.user_repo.update_user_email(current_user.id, request.email)
+    return {"email": request.email}
 
 
 @app.get("/trending_tokens")
@@ -317,6 +337,78 @@ async def stripe_webhook(request: Request):
         )
 
     return {"status": "success"}
+
+
+@app.post("/create-crypto-subscription")
+async def create_crypto_subscription(
+    request: CryptoSubscriptionRequest,
+    current_user: User = Depends(get_current_user),
+):
+    if not current_user.wallet_address:
+        raise HTTPException(status_code=400, detail="Please connect your wallet first")
+
+    print(
+        f"Creating crypto subscription for user: {request.plan} - {current_user.wallet_address}"
+    )
+
+    try:
+        if not current_user.crypto_customer_id:
+            # update user role to premium because of 3 day free trial
+            await db_operations.user_repo.crypto_update_user_role(
+                current_user.id,
+                "premium",
+                crypto_customer_id=current_user.wallet_address,
+                subscription_end_date=datetime.fromtimestamp(
+                    datetime.now().timestamp() + 3 * 24 * 60 * 60
+                ),
+            )
+
+            return {
+                "crypto_customer_id": current_user.wallet_address,
+                "trial_period_days": 3,
+            }
+        else:
+            # send payment details
+            price_mapping = {
+                "monthly": monthly_subscription_fee,
+                "yearly": yearly_subscription_fee,
+            }
+            amount = price_mapping.get(request.plan)
+            if not amount:
+                raise HTTPException(status_code=400, detail="Invalid subscription plan")
+
+            return {"amount": amount, "payment_address": crypto_payment_address}
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/verify-crypto-payment")
+async def verify_crypto_payment(
+    request: VerifyCryptoPaymentRequest,
+    current_user: User = Depends(get_current_user),
+):
+    subscriptionInfo = await process_crypto_subscription(
+        user_id=current_user.id,
+        token=request.token,
+        tx_hash=request.tx_hash,
+        plan=request.plan,
+        sender_address=request.sender_address,
+    )
+
+    if not subscriptionInfo:
+        raise HTTPException(status_code=400, detail="Payment verification failed")
+
+    await db_operations.user_repo.crypto_update_user_role(
+        current_user.id,
+        "premium",
+        crypto_customer_id=current_user.wallet_address,
+        subscription_end_date=datetime.fromtimestamp(
+            subscriptionInfo["subscription_end_date"]
+        ),
+    )
+
+    return {"subscription_end_date": subscriptionInfo["subscription_end_date"]}
 
 
 if __name__ == "__main__":
