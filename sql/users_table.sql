@@ -7,4 +7,8 @@ CREATE TABLE users (
     stripe_subscription_id VARCHAR(255),
     subscription_end_date TIMESTAMP,
     crypto_customer_id VARCHAR(255),
+    affiliate_code VARCHAR(255),
+    referred_by_user_id INT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    payout_option VARCHAR(20) DEFAULT 'USDT',
 );

@@ -101,7 +101,7 @@ async def verify_crypto_payment(
             return False
 
         print(f"Payment verified: TX Hash {tx_hash}")
-        return True
+        return {"amount": expected_amount}
 
     except Exception as e:
         print(f"Error verifying transaction: {str(e)}")
@@ -124,7 +124,10 @@ async def process_crypto_subscription(
         subscription_end_date = datetime.timestamp(
             datetime.now() + timedelta(days=days)
         )
-        return {"subscription_end_date": subscription_end_date}
+        return {
+            "subscription_end_date": subscription_end_date,
+            "amount": payment_confirmed["amount"],
+        }
     return None
 
 

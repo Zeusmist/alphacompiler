@@ -38,3 +38,5 @@ monthly_subscription_fee = os.getenv("MONTHLY_SUBSCRIPTION_FEE")
 yearly_subscription_fee = os.getenv("YEARLY_SUBSCRIPTION_FEE")
 
 ethereum_node_url = os.getenv("ETHEREUM_NODE_URL")
+
+commission_percentage = os.getenv("COMMISSION_PERCENTAGE", 0.1)
