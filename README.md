@@ -16,6 +16,8 @@
 4. Install dependencies: `pip install -r requirements.txt`
 5. Make sure the service starter has execute permissions:
 
+**Note:** After installing any new dependencies, update the `requirements.txt` file: `pip freeze > requirements.txt`
+
 ```bash
 chmod +x service_starter.py
 ```

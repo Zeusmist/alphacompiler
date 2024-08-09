@@ -38,7 +38,16 @@ async def fetch_token_info_from_dexscreener(ticker):
                         "token_address": pair["baseToken"]["address"],
                         "token_name": pair["baseToken"]["name"],
                         "token_image": pair.get("info", {}).get("imageUrl"),
-                        "network": pair["chainId"],
+                        "network": (
+                            pair["chainId"].capitalize()
+                            if pair.get("chainId")
+                            else None
+                        ),
+                        "token_ticker": (
+                            pair["baseToken"]["symbol"]
+                            if pair.get("baseToken")
+                            else ticker
+                        ),
                     }
     return None
 
@@ -59,13 +68,13 @@ async def message_handler(event):
                     ]
 
                 # Check for missing network
-                if not analysis_result.get("network"):
-                    network = await db_operations.token_repo.get_network_for_ticker(
-                        analysis_result["token_ticker"]
-                    )
-                    # network might be null
-                    if network and network != "null":
-                        analysis_result["network"] = network
+                # if not analysis_result.get("network"):
+                #     network = await db_operations.token_repo.get_network_for_ticker(
+                #         analysis_result["token_ticker"]
+                #     )
+                #     # network might be null
+                #     if network and network != "null":
+                #         analysis_result["network"] = network
 
                 # Fetch token info from DexScreener if network or address is missing
                 if not analysis_result.get("network") or not analysis_result.get(
@@ -77,6 +86,7 @@ async def message_handler(event):
                     if token_info:
                         analysis_result["token_address"] = token_info["token_address"]
                         analysis_result["token_name"] = token_info["token_name"]
+                        analysis_result["token_ticker"] = token_info["token_ticker"]
                         if token_info["token_image"]:
                             analysis_result["token_image"] = token_info["token_image"]
                         if not analysis_result.get("network"):
