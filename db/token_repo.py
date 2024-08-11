@@ -9,6 +9,14 @@ from pydantic import BaseModel
 import asyncio
 
 
+def safe_getattr(obj, attr, default):
+    try:
+        value = getattr(obj, attr)
+        return value if value is not None else default
+    except AttributeError:
+        return default
+
+
 class TrendingToken(BaseModel):
     token_ticker: str
     network: str
@@ -110,9 +118,11 @@ class TokenRepository(PostgresRepository):
 
                 # Sort the tokens if the sort field is from the external data source
                 if sort_by in ["price", "h24_change", "h24_volume"]:
+                    default_value = (
+                        float("-inf") if sort_order == "desc" else float("inf")
+                    )
                     trending_tokens.sort(
-                        key=lambda x: getattr(x, sort_by)
-                        or (float("-inf") if sort_order == "desc" else float("inf")),
+                        key=lambda x: safe_getattr(x, sort_by, default_value),
                         reverse=(sort_order == "desc"),
                     )
 
@@ -162,7 +172,8 @@ class TokenRepository(PostgresRepository):
         except Exception as e:
             logger.error(f"Error fetching DexScreener data: {e}")
 
-        return TrendingToken(**token_data)
+        # return TrendingToken(**token_data)
+        return token_data
 
     async def get_network_for_ticker(self, ticker: str) -> Optional[str]:
         try:
