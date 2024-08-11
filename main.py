@@ -2,8 +2,8 @@ import asyncio
 from telegram_client import start_telegram_client
 from api import app
 import uvicorn
-from service_starter import main as start_services
-from db.db_operations import db_operations
+
+# from service_starter import main as start_services
 
 
 async def run_api():
@@ -17,5 +17,5 @@ async def main():
 
 
 if __name__ == "__main__":
-    start_services()
+    # start_services()
     asyncio.run(main())

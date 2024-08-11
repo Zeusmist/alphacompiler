@@ -10,5 +10,5 @@ CREATE TABLE users (
     affiliate_code VARCHAR(255),
     referred_by_user_id INT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    payout_option VARCHAR(20) DEFAULT 'USDT',
+    payout_option VARCHAR(20) DEFAULT 'USDT'
 );

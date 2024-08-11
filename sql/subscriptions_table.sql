@@ -5,4 +5,3 @@ CREATE TABLE subscriptions (
     start_date TIMESTAMP NOT NULL,
     end_date TIMESTAMP NOT NULL
 );
-
