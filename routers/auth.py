@@ -79,12 +79,12 @@ async def signup(user: UserSignup):
     if user.affiliate_code:
         affiliate = await get_user_by_affiliate_code(user.affiliate_code)
         if affiliate:
-            referred_by_user_id = affiliate["id"]
+            referred_by_user_id = affiliate.id
 
     new_user = await create_user(user.email, user.wallet_address, referred_by_user_id)
 
     if referred_by_user_id:
-        await create_referral(referred_by_user_id, new_user["id"])
+        await create_referral(referred_by_user_id, new_user.id)
 
     access_token = get_access_token(user.email or user.wallet_address)
 

@@ -14,7 +14,7 @@ class User(BaseModel):
     subscription_end_date: Optional[datetime] = None
     crypto_customer_id: Optional[str] = None
     affiliate_code: Optional[str] = None
-    referred_by_user_id: Optional[str] = None
+    referred_by_user_id: Optional[int] = None
     payout_option: Optional[str] = None
 
 
