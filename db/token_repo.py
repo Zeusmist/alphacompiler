@@ -21,14 +21,14 @@ class TrendingToken(BaseModel):
     token_ticker: str
     network: str
     token_address: str
-    token_name: Optional[str]
-    token_image: Optional[str]
+    token_name: Optional[str] = None
+    token_image: Optional[str] = None
     mention_count: int
     latest_date: datetime
-    pair: Optional[str]
-    price: Optional[float]
-    h24_change: Optional[float]
-    h24_volume: Optional[float]
+    pair: Optional[str] = None
+    price: Optional[float] = None
+    h24_change: Optional[float] = None
+    h24_volume: Optional[float] = None
 
 
 class TokenRepository(PostgresRepository):
@@ -79,7 +79,10 @@ class TokenRepository(PostgresRepository):
                 cached_data = await self.db.redis.get(cache_key)
                 if cached_data:
                     logger.info("Returning cached result")
-                    return [TrendingToken(**token) for token in json.loads(cached_data)]
+                    return [
+                        TrendingToken.model_validate(token)
+                        for token in json.loads(cached_data)
+                    ]
             except Exception as e:
                 logger.error(f"Cache error: {e}")
 
