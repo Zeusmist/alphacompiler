@@ -131,7 +131,8 @@ class TokenRepository(PostgresRepository):
                     await self.db.redis.set(
                         cache_key,
                         json.dumps(
-                            [token.dict() for token in trending_tokens],
+                            # [token.dict() for token in trending_tokens],
+                            trending_tokens,
                             default=json_serial,
                         ),
                         ex=60 * 5,
