@@ -31,7 +31,35 @@ class TrendingToken(BaseModel):
     h24_volume: Optional[float] = None
 
 
+class TaskManager:
+    def __init__(self):
+        self.tasks: Dict[str, asyncio.Task] = {}
+
+    def create_task(self, key: str, coro):
+        if key in self.tasks and not self.tasks[key].done():
+            return  # Task already running
+
+        task = asyncio.create_task(self.run_and_cleanup(key, coro))
+        self.tasks[key] = task
+
+    async def run_and_cleanup(self, key: str, coro):
+        try:
+            await coro
+        except Exception as e:
+            logger.error(f"Error in background task {key}: {e}")
+        finally:
+            self.tasks.pop(key, None)
+
+    def cancel_all_tasks(self):
+        for task in self.tasks.values():
+            task.cancel()
+
+
 class TokenRepository(PostgresRepository):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.task_manager = TaskManager()
+
     async def save_alpha_call(self, alpha_call: Dict[str, Any]):
         date = parse(alpha_call["date"])
         if date.tzinfo is None:
@@ -73,11 +101,30 @@ class TokenRepository(PostgresRepository):
             f"Fetching trending tokens with {time_window=}, {limit=}, {sort_by=}, {sort_order=}"
         )
         cache_key = f"trending_tokens:{time_window}:{limit}:{sort_by}:{sort_order}"
+        lock_key = f"{cache_key}:lock"
 
         if self.db.redis:
             try:
+                # Try to get cached data
                 cached_data = await self.db.redis.get(cache_key)
                 if cached_data:
+                    # Check if we need to revalidate
+                    ttl = await self.db.redis.ttl(cache_key)
+                    if ttl <= 0:
+                        # Cache has expired, start revalidation if not already running
+                        self.task_manager.create_task(
+                            cache_key,
+                            self.revalidate_cache(
+                                cache_key,
+                                lock_key,
+                                time_window,
+                                limit,
+                                sort_by,
+                                sort_order,
+                            ),
+                        )
+
+                    # Return cached data immediately
                     logger.info("Returning cached result")
                     return [
                         TrendingToken.model_validate(token)
@@ -86,6 +133,50 @@ class TokenRepository(PostgresRepository):
             except Exception as e:
                 logger.error(f"Cache error: {e}")
 
+        # If no cached data or cache error, fetch fresh data
+        return await self.fetch_fresh_data(
+            cache_key, time_window, limit, sort_by, sort_order
+        )
+
+    async def revalidate_cache(
+        self,
+        cache_key: str,
+        lock_key: str,
+        time_window: timedelta,
+        limit: int,
+        sort_by: str,
+        sort_order: str,
+    ):
+        try:
+            # Set lock to prevent multiple revalidations
+            if not await self.db.redis.set(lock_key, "1", ex=60, nx=True):
+                return  # Another revalidation is already in progress
+
+            fresh_data = await self.fetch_fresh_data(
+                cache_key, time_window, limit, sort_by, sort_order
+            )
+
+            # Update cache with fresh data
+            await self.db.redis.set(
+                cache_key,
+                json.dumps(fresh_data, default=json_serial),
+                ex=60 * 5,  # 5 minutes expiry
+            )
+            logger.info(f"Cache revalidated for {cache_key}")
+        except Exception as e:
+            logger.error(f"Revalidation error for {cache_key}: {e}")
+        finally:
+            # Release lock
+            await self.db.redis.delete(lock_key)
+
+    async def fetch_fresh_data(
+        self,
+        cache_key: str,
+        time_window: timedelta,
+        limit: int,
+        sort_by: str,
+        sort_order: str,
+    ) -> List[TrendingToken]:
         try:
             now = datetime.now(timezone.utc)
             naive_utc_date = now.replace(tzinfo=None)
@@ -105,7 +196,6 @@ class TokenRepository(PostgresRepository):
                 LIMIT $2
             """
 
-            # These fields are already in the table
             if sort_by in ["mention_count", "latest_date"]:
                 sort_field = sort_by
             else:
@@ -119,7 +209,6 @@ class TokenRepository(PostgresRepository):
                 tasks = [self.fetch_token_data(session, dict(row)) for row in rows]
                 trending_tokens = await asyncio.gather(*tasks)
 
-                # Sort the tokens if the sort field is from the external data source
                 if sort_by in ["price", "h24_change", "h24_volume"]:
                     default_value = (
                         float("-inf") if sort_order == "desc" else float("inf")
@@ -133,12 +222,8 @@ class TokenRepository(PostgresRepository):
                 try:
                     await self.db.redis.set(
                         cache_key,
-                        json.dumps(
-                            # [token.dict() for token in trending_tokens],
-                            trending_tokens,
-                            default=json_serial,
-                        ),
-                        ex=60 * 5,
+                        json.dumps(trending_tokens, default=json_serial),
+                        ex=60 * 5,  # 5 minutes expiry
                     )
                 except Exception as e:
                     logger.error(f"Failed to set redis: {e}")
@@ -153,6 +238,14 @@ class TokenRepository(PostgresRepository):
         self, session: aiohttp.ClientSession, token_data: dict
     ) -> TrendingToken:
         token_address = token_data["token_address"]
+
+        cache_key = f"dex_data:{token_address}"
+
+        if self.db.redis:
+            cached_data = await self.db.redis.get(cache_key)
+            if cached_data:
+                return json.loads(cached_data)
+
         dex_url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
 
         try:
@@ -169,6 +262,13 @@ class TokenRepository(PostgresRepository):
                                 "h24_volume": pair["volume"]["h24"],
                             }
                         )
+
+                        if self.db.redis:
+                            await self.db.redis.set(
+                                cache_key,
+                                json.dumps(token_data, default=json_serial),
+                                ex=300,
+                            )  # Cache for 5 minutes
                     else:
                         logger.warning(
                             f"Failed to fetch data from DexScreener for {token_address}"
@@ -196,3 +296,11 @@ class TokenRepository(PostgresRepository):
         except Exception as e:
             logger.error(f"An error occurred while fetching network for ticker: {e}")
             return None
+
+    async def cleanup(self):
+        """Cleanup method to be called when shutting down the application"""
+        self.task_manager.cancel_all_tasks()
+        # Wait for all tasks to complete
+        tasks = list(self.task_manager.tasks.values())
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)

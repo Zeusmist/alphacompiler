@@ -11,3 +11,8 @@ CREATE TABLE alpha_calls (
     date TIMESTAMP NOT NULL,
     long_term BOOLEAN NOT NULL
 );
+
+CREATE INDEX idx_alpha_calls_date ON alpha_calls(date);
+CREATE INDEX idx_alpha_calls_token_ticker ON alpha_calls(token_ticker);
+CREATE INDEX idx_alpha_calls_network ON alpha_calls(network);
+CREATE INDEX idx_alpha_calls_token_address ON alpha_calls(token_address);

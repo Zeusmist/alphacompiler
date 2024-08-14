@@ -28,6 +28,7 @@ async def startup():
 
 @app.on_event("shutdown")
 async def shutdown():
+    await db_operations.token_repo.cleanup()
     await db_operations.close()
 
 
