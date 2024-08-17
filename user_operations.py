@@ -60,7 +60,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 
 
 def is_premium_user(user: User):
-    return user.role == "premium" or (
+    return user.stripe_subscription_id is not None or (
         user.subscription_end_date and user.subscription_end_date > datetime.utcnow()
     )
 

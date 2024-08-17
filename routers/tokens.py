@@ -2,6 +2,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from datetime import timedelta
 from db.db_operations import db_operations
+from user_operations import is_premium_user
 from helpers.api_helpers import get_current_user
 from models.user_models import User
 
@@ -16,7 +17,9 @@ async def get_trending_tokens(
     sort_by: str = "mention_count",
     sort_order: str = "desc",
 ):
-    limit = limit if current_user and current_user.role == "premium" else 3
+    has_subscription = is_premium_user(current_user)
+
+    limit = limit if current_user and has_subscription else 3
 
     # if time window ends with h, use hours, if time window ends with d, use days
     if time_window[-1] == "h":
@@ -26,17 +29,7 @@ async def get_trending_tokens(
     else:
         window = timedelta(days=3)
 
-    window = (
-        window if current_user and current_user.role == "premium" else timedelta(days=7)
-    )
-
-    # # Convert time_window to timedelta
-    # if time_window == "24h":
-    #     window = timedelta(hours=24)
-    # elif time_window == "7d":
-    #     window = timedelta(days=7)
-    # else:
-    #     window = timedelta(days=3)  # Default to 3 days
+    window = window if current_user and has_subscription else timedelta(days=7)
 
     try:
         trending_tokens = await db_operations.token_repo.get_trending_tokens(
